@@ -313,7 +313,6 @@ def kron(*args):
 
 # Utility function to check matrix dimensions
 def check_shape(name, M, n, m, square=False, symmetric=False):
-    "Verify the dims of matrix M."
     if square and M.shape[0] != M.shape[1]:
         raise logger.warn("%s must be a square matrix" % name)
 

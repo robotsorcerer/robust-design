@@ -21,9 +21,6 @@ R = E'*E;
 x0 = zeros(xn,1);
 [X, U] = int_system(dt, tf, x0);
 
-% X = csvread('D:\OneDrive\X.csv');
-% U = csvread('D:\OneDrive\U.csv');
-
 n_data = length(U); 
 
 Phi = zeros(n_phi,n_phi);
