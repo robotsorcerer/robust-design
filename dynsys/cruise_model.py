@@ -1,4 +1,4 @@
-__all__ = ["CruiseControl"]
+__all__ = ["CruiseControlModel"]
 
 from re import M
 import numpy as np
@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from math import pi
 import control as ct
 
-class CruiseControl():
-    def __init__(self, n=1, m=3, d=3):
+class CruiseControlModel():
+    def __init__(self, n=1, m=3, d=2):
         """Parameters for the model. 
             n: state dimension (velocity of the car)
             m: control dimension (Throttle, gear ratio, road)
@@ -16,6 +16,66 @@ class CruiseControl():
         self.n = n
         self.m = m
         self.d = d 
+
+    def gen_bin_seq(self, N, p_swd, nmin=1, interval=[-1.0, 1.0], tol = 0.01, nit_max = 30):
+        """
+            Function which generates a sequence Generalized Binary Noise (GBN).
+
+            Params
+            ------
+            N: Sequence length (total number of samples)
+            p_swd: desired probability of switching (no switch: 0<x<1 :always switch)
+            nmin: minimum number of samples between two switches
+            Range: input range
+            tol: tolerance on switching probability relative error
+            nit_max: maximum number of iterations
+
+            Returns
+            -------
+            GBN: size(N); Switching probability, Number of times actually switched.
+
+        """
+        min_Range = min(interval)
+        max_Range = max(interval)
+        prob = np.random.random()
+        # set first value
+        if prob < 0.5:
+            gbn = -1.0*np.ones(N)
+        else:
+            gbn = 1.0*np.ones(N)
+        # init. variables
+        p_sw = p_sw_b = 2.0             # actual switch probability
+        nit = 0; 
+        while (np.abs(p_sw - p_swd))/p_swd > tol and nit <= nit_max:
+            i_fl = 0; Nsw = 0
+            for i in range(N - 1):
+                gbn[i + 1] = gbn[i]
+                # test switch probability
+                if (i - i_fl >= nmin):
+                    prob = np.random.random()
+                    # track last test of p_sw
+                    i_fl = i
+                    if (prob < p_swd):
+                        # switch and then count it
+                        gbn[i + 1] = -gbn[i + 1]
+                        Nsw = Nsw + 1
+            # check actual switch probability
+            p_sw = nmin*(Nsw+1)/N; #print("p_sw", p_sw);
+            # set best iteration
+            if np.abs(p_sw - p_swd) < np.abs(p_sw_b - p_swd):
+                p_sw_b = p_sw
+                Nswb = Nsw
+                gbn_b = gbn.copy()
+            # increase iteration number
+            nit = nit + 1; #print("nit", nit)
+        # rescale GBN
+        for i in range(N):
+            if gbn_b[i] > 0.:
+                gbn_b[i] = max_Range
+            else:
+                gbn_b[i] = min_Range
+
+        return gbn_b, p_sw_b, Nswb
 
     def gen_white_noise(self, l, sigma):
         """Generate a white noise sequence using a zero-mean ans sigma-variance.
@@ -53,12 +113,12 @@ class CruiseControl():
 
         return np.clip(Tm * (1 - beta * (omega/omega_m - 1)**2), 0, None)
 
-    def dynamics(self, x, u, params={}):
+    def dynamics(self, v, u, params={}):
         """Vehicle dynamics for cruise control system.
 
         Parameters
         ----------
-        x : array
+        v : array
             System state: car velocity in m/s
         u : array
             System input: [throttle, gear, road_slope], where throttle is
@@ -87,7 +147,6 @@ class CruiseControl():
             'alpha', [40, 25, 16, 12, 10])      # gear ratio / wheel radius
 
         # Define variables for vehicle state and inputs
-        v        = x        # vehicle velocity
         throttle = u[0]     # vehicle throttle
         gear     = u[1]     # vehicle gear
         theta    = u[2]     # road slope
@@ -127,7 +186,7 @@ class CruiseControl():
         
         return dv
 
-    def data_collect(self, n=501):
+    def data_collect(self, ndata=500):
         """Generate input signal for system identification data collection on system
         
             Params
@@ -138,7 +197,7 @@ class CruiseControl():
         """
         # noise exploration variance 
         var = [0.005]
-        e   = self.gen_white_noise(n, var)
+        e   = self.gen_white_noise(ndata, var)
 
 
         # # values of effective wheel radius chosen from R.M. State feedback control book, section 4.1
@@ -156,29 +215,36 @@ class CruiseControl():
         ux = np.linspace(0, 2*np.pi, e.size)
 
         uref = (np.sin(ux)+0.7)/2
+        #uref, _, _ = self.gen_bin_seq(ndata, 0.08, interval=[0, 1])
+        #print(uref.shape)
 
         # Define the gear and road curvature vectors
-        gear = 4 * np.ones((n))
+        gear = 4 * np.ones((ndata))
 
-        theta = np.array([
-            0 if t <= 25 else
-            4./180. * pi * (t-5) if t <= 50 else
-            4./180. * pi for t in range(n)])
+        # make road inclination a Wiener process 
+        noise_Gauss = np.random.normal(0, 1, ndata)
+        dw = np.cumsum(noise_Gauss)
+        theta = dw #np.array([4./180. * pi + dw]).squeeze()
 
+
+        # theta = [
+        #     0 if t <= ndata//20 else
+        #     4./180. * pi * (t-5) if t <= ndata//10 else
+        #     4./180. * pi for t in range(ndata)]
 
         u = [ 
-                np.clip(uref, 0, 1),
+                uref, #np.clip(uref, 0, 1),
                 gear, # pick one gear ratio for the entire data collection regime
                 theta
             ]
 
         # torques (states) for different gears, as a function of velocity 
-        v = np.linspace(1, n, n)
+        v = np.linspace(1, ndata, ndata)
 
-        ode_rhs = self.dynamics(x=v, u=u, dt= 0.01)
+        ode_rhs = self.dynamics(v=v, u=u)
 
         # use this for NARMAX identification
-        return u, ode_rhs
+        return np.asarray(u), ode_rhs
         
 
 
