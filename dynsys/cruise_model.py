@@ -199,24 +199,11 @@ class CruiseControlModel():
         var = [0.005]
         e   = self.gen_white_noise(ndata, var)
 
-
-        # # values of effective wheel radius chosen from R.M. State feedback control book, section 4.1
-        # alpha = [40, 25, 16, 12, 10]
-        # for gear in range(len(alpha)):
-        #     # adding exploration noise to the data collection process here since I will be in a NARMAX regime
-        #     omega_cur = alpha[gear] * (v+e)
-        #     omega = np.insert(omega, omega.size, omega_cur)
-        #     torques = np.insert(torques, torques.size, self.motor_torque(omega_cur))
-        
-        # x = np.hstack(([v for i in range(len(alpha)+1)]))
-
         # generate throttle signals as white noise corrupted sinusoids
         # e = self.gen_white_noise(n, [0.005])
         ux = np.linspace(0, 2*np.pi, e.size)
 
         uref = (np.sin(ux)+0.7)/2
-        #uref, _, _ = self.gen_bin_seq(ndata, 0.08, interval=[0, 1])
-        #print(uref.shape)
 
         # Define the gear and road curvature vectors
         gear = 4 * np.ones((ndata))
