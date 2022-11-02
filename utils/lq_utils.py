@@ -1,7 +1,7 @@
 __all__ = ["vec", "svec", "svec2", "mat",  "mdot", "specrad", "vec2vecT",
            "smat", "smat2", "acker", "sympart", "is_pos_def", "succ", 
            "precc", "psdpart", "kron", "ctrb", "obsv", "is_symmetric", 
-           "check_shape"]
+           "check_shape", "is_controllable", "is_observable"]
 
 __author__ 		= "Lekan Molu"
 __copyright__ 	= "2022, Robust Learning."
@@ -184,8 +184,23 @@ def ctrb(A, B):
 
     return C
 
+def is_controllable(A, B):
+    """Test if a system is controllable.
 
-def obsv(A, C):
+        Parameters
+        ----------
+        A, B: array_like
+            Dynamics and input matrix of the system
+    """
+    ct = ctrb(A, B)
+
+    if la.matrix_rank(ct) != A.shape[0]:
+        return False 
+    else:
+        return True
+
+
+def obsv(C, A):
     """
         Observability matrix
 
@@ -208,6 +223,21 @@ def obsv(A, C):
     O = np.hstack([C] + [C@la.matrix_power(A, i) for i in range(1, n)])
 
     return O
+
+def is_observable(A, C):
+    """Test if a system is controllable.
+
+        Parameters
+        ----------
+        A, C: array_like
+            State transition and output matrices of the system
+    """
+    ct = obsv(A, C)
+    
+    if la.matrix_rank(ct) != A.shape[0]:
+        return False 
+    else:
+        return True
 
 def acker(A, B, poles):
     """
@@ -236,9 +266,6 @@ def acker(A, B, poles):
     ct = ctrb(A, B)
     if la.matrix_rank(ct) != A.shape[0]:
         raise ValueError("System not reachable; pole placement invalid")
-
-    # Compute the desired characteristic polynomial
-    p = np.real(np.poly(poles))
 
     # Compute the desired characteristic polynomial
     p = np.real(np.poly(poles))
@@ -317,7 +344,7 @@ def check_shape(name, M, n, m, square=False, symmetric=False):
     if square and M.shape[0] != M.shape[1]:
         raise logger.warn("%s must be a square matrix" % name)
 
-    if symmetric and not _is_symmetric(M):
+    if symmetric and not is_symmetric(M):
         raise logger.warn("%s must be a symmetric matrix" % name)
 
     if M.shape[0] != n or M.shape[1] != m:
