@@ -1,12 +1,12 @@
 __all__ = ["vec", "svec", "svec2", "mat",  "mdot", "specrad", "vec2vecT",
-           "smat", "smat2", "acker", "sympart", "is_pos_def", "succ", 
-           "precc", "psdpart", "kron", "ctrb", "obsv", "is_symmetric", 
-           "check_shape", "is_controllable", "is_observable"]
+           "smat", "smat2", "acker", "sympart", "is_pos_def", "succ",
+           "precc", "psdpart", "kron", "ctrb", "obsv", "is_symmetric", "place",
+           "check_shape", "is_controllable", "is_observable", "place_varga"]
 
 __author__ 		= "Lekan Molu"
 __copyright__ 	= "2022, Robust Learning."
 __license__ 	= "Microsoft License"
-__comment__ 	= "LQ, H2, and H_\infty Control Theory Utilities."
+__comment__ 	= "Utilities peculiar to linear systems."
 __maintainer__ 	= "Lekan Molu"
 __email__ 		= "lekanmolu@microsoft.com"
 __status__ 		= "Completed"
@@ -19,6 +19,25 @@ import numpy.linalg as la
 import scipy.linalg as sla
 import numpy.random as npr
 from functools import reduce
+
+# Make sure we have access to the right slycot routines
+try:
+    from slycot import sb03md57
+    # wrap without the deprecation warning
+    def sb03md(n, C, A, U, dico, job='X',fact='N',trana='N',ldwork=None):
+        ret = sb03md57(A, U, C, dico, job, fact, trana, ldwork)
+        return ret[2:]
+except ImportError:
+    try:
+        from slycot import sb03md
+    except ImportError:
+        sb03md = None
+
+try:
+    from slycot import sb03od
+except ImportError:
+    sb03od = None
+
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -140,7 +159,7 @@ def vec2vecT(nr, nc):
 
         Calling Sig
         -----------
-        vec(X') = Tv2v*vec(X)  
+        vec(X') = Tv2v*vec(X)
 
         Input:
             nr, nc: Numbers of rows and columns respectively.
@@ -150,12 +169,12 @@ def vec2vecT(nr, nc):
 
         Author: Leilei Cui.
     """
-    
+
     T_vt = np.zeros((nr*nc, nr*nc))
 
     for i in range(nr):
         for j in range(nc):
-            T_vt[i*nc+j,j*nr+i] = 1 
+            T_vt[i*nc+j,j*nr+i] = 1
 
     return T_vt
 
@@ -195,7 +214,7 @@ def is_controllable(A, B):
     ct = ctrb(A, B)
 
     if la.matrix_rank(ct) != A.shape[0]:
-        return False 
+        return False
     else:
         return True
 
@@ -233,9 +252,9 @@ def is_observable(A, C):
             State transition and output matrices of the system
     """
     ct = obsv(A, C)
-    
+
     if la.matrix_rank(ct) != A.shape[0]:
-        return False 
+        return False
     else:
         return True
 
@@ -279,8 +298,188 @@ def acker(A, B, poles):
     K = np.linalg.solve(ct, pmat)
 
     K = K[-1][:]                # Extract the last row
-    
+
     return K
+
+# Pole placement
+def place(A, B, p):
+    """Place closed loop eigenvalues
+
+    K = place(A, B, p)
+
+    Parameters
+    ----------
+    A : 2D array_like
+        Dynamics matrix
+    B : 2D array_like
+        Input matrix
+    p : 1D array_like
+        Desired eigenvalue locations
+
+    Returns
+    -------
+    K : 2D array (or matrix)
+        Gain such that A - B K has eigenvalues given in p
+
+    Notes
+    -----
+    Algorithm
+        This is a wrapper function for :func:`scipy.signal.place_poles`, which
+        implements the Tits and Yang algorithm [1]_. It will handle SISO,
+        MISO, and MIMO systems. If you want more control over the algorithm,
+        use :func:`scipy.signal.place_poles` directly.
+
+    Limitations
+        The algorithm will not place poles at the same location more
+        than rank(B) times.
+
+    The return type for 2D arrays depends on the default class set for
+    state space operations.  See :func:`~control.use_numpy_matrix`.
+
+    References
+    ----------
+    .. [1] A.L. Tits and Y. Yang, "Globally convergent algorithms for robust
+       pole assignment by state feedback, IEEE Transactions on Automatic
+       Control, Vol. 41, pp. 1432-1452, 1996.
+
+    Examples
+    --------
+    >>> A = [[-1, -1], [0, 1]]
+    >>> B = [[0], [1]]
+    >>> K = place(A, B, [-2, -5])
+
+    See Also
+    --------
+    place_varga, acker
+
+    Notes
+    -----
+    Lifted from statefdbk function in Murray's python control.
+    """
+    from scipy.signal import place_poles
+
+    # Convert the system inputs to NumPy arrays
+    if (A.shape[0] != A.shape[1]):
+        raise ValueError("A must be a square matrix")
+
+    if (A.shape[0] != B.shape[0]):
+        err_str = "The number of rows of A must equal the number of rows in B"
+        raise ValueError(err_str)
+
+    # Convert desired poles to numpy array
+    placed_eigs = np.atleast_1d(np.squeeze(np.asarray(p)))
+
+    result = place_poles(A, B, placed_eigs, method='YT')
+    K = result.gain_matrix
+    return K
+
+
+def place_varga(A, B, p, dtime=False, alpha=None):
+    """Place closed loop eigenvalues
+    K = place_varga(A, B, p, dtime=False, alpha=None)
+
+    Required Parameters
+    ----------
+    A : 2D array_like
+        Dynamics matrix
+    B : 2D array_like
+        Input matrix
+    p : 1D array_like
+        Desired eigenvalue locations
+
+    Optional Parameters
+    ---------------
+    dtime : bool
+        False for continuous time pole placement or True for discrete time.
+        The default is dtime=False.
+
+    alpha : double scalar
+        If `dtime` is false then place_varga will leave the eigenvalues with
+        real part less than alpha untouched.  If `dtime` is true then
+        place_varga will leave eigenvalues with modulus less than alpha
+        untouched.
+
+        By default (alpha=None), place_varga computes alpha such that all
+        poles will be placed.
+
+    Returns
+    -------
+    K : 2D array (or matrix)
+        Gain such that A - B K has eigenvalues given in p.
+
+    Algorithm
+    ---------
+    This function is a wrapper for the slycot function sb01bd, which
+    implements the pole placement algorithm of Varga [1]. In contrast to the
+    algorithm used by place(), the Varga algorithm can place multiple poles at
+    the same location. The placement, however, may not be as robust.
+
+    [1] Varga A. "A Schur method for pole assignment."  IEEE Trans. Automatic
+        Control, Vol. AC-26, pp. 517-519, 1981.
+
+    Notes
+    -----
+    The return type for 2D arrays depends on the default class set for
+    state space operations.  See :func:`~control.use_numpy_matrix`.
+
+    Examples
+    --------
+    >>> A = [[-1, -1], [0, 1]]
+    >>> B = [[0], [1]]
+    >>> K = place_varga(A, B, [-2, -5])
+
+    See Also:
+    --------
+    place, acker
+
+    """
+
+    # Make sure that SLICOT is installed
+    try:
+        from slycot import sb01bd
+    except ImportError:
+        raise print("can't find slycot module 'sb01bd'")
+
+    # Convert the system inputs to NumPy arrays
+    if (A.shape[0] != A.shape[1] or A.shape[0] != B.shape[0]):
+        raise ValueError("matrix dimensions are incorrect")
+
+    # Compute the system eigenvalues and convert poles to numpy array
+    system_eigs = np.linalg.eig(A)[0]
+    placed_eigs = np.atleast_1d(np.squeeze(np.asarray(p)))
+
+    # Need a character parameter for SB01BD
+    if dtime:
+        DICO = 'D'
+    else:
+        DICO = 'C'
+
+    if alpha is None:
+        # SB01BD ignores eigenvalues with real part less than alpha
+        # (if DICO='C') or with modulus less than alpha
+        # (if DICO = 'D').
+        if dtime:
+            # For discrete time, slycot only cares about modulus, so just make
+            # alpha the smallest it can be.
+            alpha = 0.0
+        else:
+            # Choosing alpha=min_eig is insufficient and can lead to an
+            # error or not having all the eigenvalues placed that we wanted.
+            # Evidently, what python thinks are the eigs is not precisely
+            # the same as what slicot thinks are the eigs. So we need some
+            # numerical breathing room. The following is pretty heuristic,
+            # but does the trick
+            alpha = -2*abs(min(system_eigs.real))
+    elif dtime and alpha < 0.0:
+        raise ValueError("Discrete time systems require alpha > 0")
+
+    # Call SLICOT routine to place the eigenvalues
+    A_z, w, nfp, nap, nup, F, Z = \
+        sb01bd(B.shape[0], B.shape[1], len(placed_eigs), alpha,
+               A, B, placed_eigs, DICO)
+
+    # Return the gain matrix, with MATLAB gain convention
+    return -F
 
 
 def sympart(A):
