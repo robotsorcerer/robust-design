@@ -3,7 +3,7 @@
 This repository serves as the gathering place for algorithms and new ideas in emerging theories
 in robust control, reinforcement learning, and optimization.
 
-Most of the code is written by Lekan Molu in `python` and occasionally in `matlab`.
+Most of the code is written by [Lekan Molu](https://scriptedonachip.com/) in `python` and occasionally in `matlab`.
 
 ### Code Organization
 

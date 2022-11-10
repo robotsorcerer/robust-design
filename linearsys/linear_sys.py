@@ -1,7 +1,7 @@
-__all__ = ["vec", "svec", "svec2", "mat",  "mdot", "specrad", "vec2vecT",
-           "smat", "smat2", "acker", "sympart", "is_pos_def", "succ",
-           "precc", "psdpart", "kron", "ctrb", "obsv", "is_symmetric", "place",
-           "check_shape", "is_controllable", "is_observable", "place_varga"]
+__all__ = ["vec", "vecv", "svec", "svec2", "mat",  "mdot", "specrad", "vec2vecT",
+           "smat", "smat2", "acker", "sympart", "is_pos_def", "succ", "precc", "psdpart", 
+           "kron", "ctrb", "obsv", "is_symmetric", "place", "check_shape", "is_controllable", 
+           "is_observable", "place_varga", "sys_integrator"]
 
 __author__ 		= "Lekan Molu"
 __copyright__ 	= "2022, Robust Learning."
@@ -11,14 +11,20 @@ __maintainer__ 	= "Lekan Molu"
 __email__ 		= "lekanmolu@microsoft.com"
 __status__ 		= "Completed"
 
+
+import sys 
+sys.path.append("..")
+
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
+from multiprocessing import Pool
 
 import numpy.linalg as la
 import scipy.linalg as sla
 import numpy.random as npr
 from functools import reduce
+from utils import (isfield, Bundle)
 
 # Make sure we have access to the right slycot routines
 try:
@@ -53,34 +59,66 @@ def vec(A):
 
     return A.reshape(-1, order="F")
 
-def svec(A):
+def svec(P):
     """
-        Return the symmetric vectorization of A i.e.
-        the vectorization of the upper triangular part of matrix A.
+        Return the symmetric vectorization of P i.e.
+        the vectorization of the upper triangular part of matrix P.
+
+        Inputs
+        ------
+        P:  (array) Symmetric matrix in \mathbb{S}^n
+
+        Returns
+        -------
+        svec(P) = [p_{11} , p_{12} , · · · , p_{1n} , · · · , p_{nn} ]^T
+
+    Author: Lekan Molux, Nov 10, 2022
     """
 
-    return A[np.triu_indices(A.shape[0])]
+    assert is_symmetric(P), "P must be a symmetric matrix."
 
-def svec2(A):
+    return P[np.triu_indices(P.shape[0])]
+
+def svec2(P):
+    """Return the half-vectorization of matrix P such that its off diagonal entries are doubled.
+
+    Inputs
+    ------
+    P:  (array) Symmetric matrix in \mathbb{S}^n
+
+    Returns
+    -------
+    vecs(P):= [p11, 2p12, · · · , 2p1n, p22 , · · · , pnn ]
+
+    Author: Lekan Molux, Nov 10, 2022
     """
-        Return the symmetric vectorization i.e. the vectorization
-        of the upper triangular part of matrix A
-        with off-diagonal entries multiplied by sqrt(2)
-        so that la.norm(A, ord='fro')**2 == np.dot(svec2(A), svec2(A))
-    """
-    B = A + np.triu(A, 1)*(2**0.5 - 1)
 
-    return B[np.triu_indices(A.shape[0])]
+    assert is_symmetric(P), "P must be a symmetric matrix."
 
-def mat(v, shape=None):
+    T = np.tril(P, 0) + np.triu(P,1)*2
+
+    return T[np.triu_indices(T.shape[0])]
+
+# def svec2(A):
+#     """
+#         Return the symmetric vectorization i.e. the vectorization
+#         of the upper triangular part of matrix A
+#         with off-diagonal entries multiplied by sqrt(2)
+#         so that la.norm(A, ord='fro')**2 == np.dot(svec2(A), svec2(A))
+#     """
+    # assert is_symmetric(A), "A must be a symmetric matrix."
+#     B = A + np.triu(A)*(2)
+
+#     return B[np.triu_indices(A.shape[0])]
+
+def mat(v, shape=()):
     """
         Return matricization of vector v i.e. the
         inverse operation of vec of vector v.
     """
-    if shape is None:
-        dim = int(np.sqrt(v.size))
-        shape = dim, dim
-    matrix = v.reshape(shape[1], shape[0]).T
+    assert isinstance(shape, (tuple, list)), "shape must be an instance of list or tuple"
+    m,n = shape
+    matrix = kron(vec(np.eye(n)).T, np.eye(m))@kron(np.eye(n), v)
 
     return matrix
 
@@ -103,6 +141,9 @@ def smat2(v):
     """
         Return the symmetric matricization of vector v
         i.e. the inverse operation of svec2 of vector v.
+
+        #ToDo: This appears to solve for the case where the 
+        off-diag entries are sqrt(V_{mn})
     """
     m = v.size
     n = int(((1+m*8)**0.5 - 1)/2)
@@ -129,27 +170,15 @@ def specrad(A):
         return np.nan
 
 def vecv(x):
-    """
-        Compute the \langle vec(x), vec^T(x) \rangle vector product between the column vector
-        x and its row vector transformation.
+    """Compute the vectorized dot product of x^T and x. Return the """
+    xv = kron(x, x)
+    ij = np.array(([0]))
+    for i in range(1, len(x)+1):
+        ij = np.append(ij, np.arange((i-1)*len(x),(i-1)*len(x)+i-1), axis=0)
+    ij = ij[1:]
+    xv = np.delete(xv, ij, axis=0)
 
-        vecv(x) = [x1^2, x1x2,..., x1xn, x2^2, ..., xn^2]
-
-        Input:
-            x: n-dimensional vector
-        Output:
-            x_vecv: n*(n+1)/2 dimensional vector
-    """
-
-    x_vecv = np.kron(x,x)
-
-    idx = np.array([])
-    for i in range(1,len(x)):
-        idx = np.append(idx, np.linspace(i*len(x), i*len(x)+i, num=i, endpoint=False))
-    idx = idx.astype(int)
-    x_vecv = np.delete(x_vecv, idx)
-
-    return x_vecv
+    return xv
 
 def vec2vecT(nr, nc):
     """
@@ -548,3 +577,55 @@ def check_shape(name, M, n, m, square=False, symmetric=False):
 
     if M.shape[0] != n or M.shape[1] != m:
         raise logger.warn("Incompatible dimensions of %s matrix" % name)
+
+def sys_integrator(sys, X0, K_init, T):
+    """Algorithm: to integrate from time 0 to time dt.
+
+        Inputs
+        ------
+        sys: (Bundle) Object containing A, B, C, D, E matrices.
+        X0:  (array) Initial conditions
+        K_init:   (array) Initial feedback gain to be used for forced response simulation.
+        T : (array), optional for discrete LTI `sys`
+            Time steps at which the input is defined; values must be evenly spaced.
+    """
+
+    assert isinstance(sys, Bundle), "sys must be of Bundle Type"
+    assert isfield(sys, "A"), "Field A is not in sys."
+    assert isfield(sys, "B1"), "Field B1 is not in sys."
+    assert isfield(sys, "B2"), "Field B2 is not in sys."
+    assert isfield(sys, "C"), "Field C is not in sys."
+    assert isfield(sys, "D"), "Field D is not in sys."
+    assert isfield(sys, "tf"), "Field tf (final time step) is not in sys."
+    assert isfield(sys, "dt"), "Field dt (integration time step) is not in sys."
+
+    dt = 1. if sys.dt in [True, None] else sys.dt
+
+    A, B1, B2, C, D = sys.A, sys.B1, sys.B2, sys.C, sys.D
+
+    n_states  = A.shape[0]
+    n_inputs  = B1.shape[1]
+    n_disturbs  = B2.shape[1]
+    n_outputs = C.shape[0]
+    n_steps   = T.shape[0]            # number of simulation steps
+
+    input_data = np.zeros((T.shape[0], n_inputs))
+    states_data = np.zeros((T.shape[0], n_states))
+    states_data[0,:] = X0
+
+    xi   = np.zeros((n_steps, n_inputs)) # exploration input 
+    uout = np.zeros((n_steps, n_inputs))
+
+    xout = np.zeros((n_steps, n_states))
+    xout[:, 0] = X0
+
+    zout = np.zeros((n_steps, n_outputs))
+
+    for i in range(1, n_steps):
+        xi[i,:] -= xi[i-1,:]*dt + np.random.normal(0, 1, (2))*np.sqrt(dt) # encourage exploration noise.
+        uout[i-1,:] = -K_init@xout[i-1,:] + 10*xi[i,:]
+        xout[i,:] = xout[i-1,:] + (A @ xout[i-1,:] + B1 @ uout[i-1,:])*dt + B2 @ xi[i,:]*np.sqrt(dt)
+        zout[i,:] = C @ xout[i,:] + D @ uout[i,:]
+
+
+    return xout, uout, zout

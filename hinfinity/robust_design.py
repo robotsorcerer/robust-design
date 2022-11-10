@@ -10,14 +10,21 @@ __email__ 		= "lekanmolu@microsoft.com"
 __status__ 		= "Completed"
 __credits__ = "Richard Murray and Steve Brunton"
 
+import numpy as np
+import numpy.linalg as la
+import scipy.linalg as sla
+
+import sys 
+sys.path.append("..")
+from linearsys import compute_sigma
 
 def gamma_lowerbound(A, B1, B2, C, D, K):
-    """Compute the starting lower bound for the
-    search for the H infinity norm of a closed-loop system.
-
-
+    """Compute the starting lower bound for the 
+    search for the H infinity norm of a system.
+    
+    
         See section 4 (Equations 4.3 to 4.4) in the paper below:
-
+    
         @article{BruinsmaSteinbuch,
         title={{A Fast Algorithm to Compute the $H_\infty$-norm of a Transfer Function Matrix}},
         author={Bruinsma, NA and Steinbuch, M},
@@ -32,14 +39,14 @@ def gamma_lowerbound(A, B1, B2, C, D, K):
 
     # First find omega_p
     poles = sla.eig(A-B1@K)[0]
-    if np.any(np.iscomplex(pole)):
+    if np.any(np.iscomplex(poles)):
         omega_p = max([np.abs(p.imag/p.real)*(1/np.abs(p)) for p in poles])
     else:
         omega_p = min([np.abs(p) for p in poles])
 
     # G_omega_p = (C - D@K)@la.pinv(1j*omega_p - A + B1@K)@B2
-
-    AA = A - B1@K
+        
+    AA = A - B1@K 
     BB = B2
     CC = C-D@K
     Dnew = np.array([[0]])
@@ -58,17 +65,17 @@ def hamiltonian(A, B1, B2, C, D, K, gamma, R=None):
         Parameters
         ----------
         System matrices (arrays) A, B1, B2, C, and D.
-        gamma: Robustness parameter for H infinity controller
-        R: Input penalization matrix for the LQ problem.
+        gamma: Robustness parameter for H infinity controller 
+        R: Input penalization matrix for the LQ problem. 
             If not provided, it is returned as identity.
-
+            
         Returns
         --------
         H(\gamma): (array) The system's Hamiltonian.
     """
     if not R:
         R = np.eye(K.T.shape[-1])
-
+        
     a11 = A - B1@K
     a12 = -(1/gamma)*B2@B2.T
     a21 = -(1/gamma)*(C.T@C + K.T@R@K)
@@ -81,12 +88,12 @@ def hamiltonian(A, B1, B2, C, D, K, gamma, R=None):
     ham = np.vstack((top_row, bot_row))
 
     return ham
-
+    
 def get_hinf_norm(A, B1, B2, C, D, K, step_size=0.1):
     """Compute the H infinity norm using Bruinsma's algorithm.
 
         See section 3.3 in the paper below:
-
+    
         @article{BruinsmaSteinbuch,
         title={{A Fast Algorithm to Compute the $H_\infty$-norm of a Transfer Function Matrix}},
         author={Bruinsma, NA and Steinbuch, M},
@@ -110,12 +117,12 @@ def get_hinf_norm(A, B1, B2, C, D, K, step_size=0.1):
     gamma_lb = gamma_lowerbound(A, B1, B2, C, D, K)
 
     # set gamma_ub to inf
-    gamma_ub = np.inf
-    AA = A - B1@K
+    gamma_ub = np.inf 
+    AA = A - B1@K 
     BB = B2
     CC = C-D@K
     while gamma_ub==np.inf:
-        gamma = (1+2*step_size)*gamma_lb
+        gamma = (1+2*step_size)*gamma_lb 
 
         # get Hamiltonian for this gamma
         Hgamma = hamiltonian(A, B1, B2, C, D, K, gamma)
