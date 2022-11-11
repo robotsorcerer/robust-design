@@ -1,4 +1,4 @@
-__all__ = ["gamma_lowerbound", "hamiltonian", "get_hinf_norm"]
+__all__ = ["gamma_lowerbound", "hamiltonian", "get_hinf_norm", "solve_care"]
 
 __date__        = "November 02, 2022"
 __comment__     = "H-Infinity Norm Utilities for Robust control."
@@ -10,13 +10,14 @@ __email__ 		= "lekanmolu@microsoft.com"
 __status__ 		= "Completed"
 __credits__ = "Richard Murray and Steve Brunton"
 
+import copy
 import numpy as np
 import numpy.linalg as la
 import scipy.linalg as sla
 
 import sys 
 sys.path.append("..")
-from linearsys import compute_sigma
+from linearsys import (compute_sigma, smat, kron, svec)
 
 def gamma_lowerbound(A, B1, B2, C, D, K):
     """Compute the starting lower bound for the 
@@ -143,3 +144,116 @@ def get_hinf_norm(A, B1, B2, C, D, K, step_size=0.1):
             gamma_lb = max(gamma_lb_tmp)
 
     return 0.5*(gamma_lb + gamma_ub)
+
+def solve_care(A, B1, B2, Q, R, γ, S=None, E=None, stabilizing=True, method=None, dt=0.0001):
+    """
+        A Continuous-time (closed-loop) Riccati equation solver for two players 
+        in a zero-sum linear quadratic differential game setting.
+
+        Solve the equation 
+
+            :math:`AP +A^T P - P (B_1 R^{-1} B_1^T - \gamma^{-2} B_2 B_2^T) P + Q = 0`
+
+        where A and Q are square matrices of same dimension. In addition, Q is a symmetric 
+        positive definite matrix. It returns the solution P, the gain matrices, K and L, as 
+        well as the closed-loop eigenvalues of (A - B_1 K + B_2 L), where K and L are the 
+        feedback gains of the two players given by 
+
+            :math: `K=R^{-1}B_1^T P,      L = -\gamma^{-2} B_2^T P.`
+        
+        For details, see the IFAC paper by Lekan Molu and Hosein Hasanbeig.
+
+        Parameters
+        ----------
+        A, B1, B2, Q : 2D arrays
+            Input matrices for the Riccati equation.
+        γ : The H infinity risk measure.
+        R, S, E : 2D arrays, optional
+            Input matrices for generalized Riccati equation.
+        method : str, optional
+            Set the method used for computing the result.  Current methods are
+            'slycot' and 'scipy'.  If set to None (default), try 'slycot' first
+            and then 'scipy'.
+        dt : float, optional
+            Step size of the integration algorithm
+
+        Returns
+        -------
+        X : 2D array (or matrix)
+            Solution to the Ricatti equation
+        V : 1D array
+            Closed loop eigenvalues
+        K : 2D array (or matrix) for minimizing player
+        L : 2D array (or matrix) for maximizing player
+            Gain matrix
+
+        Notes
+        -----
+        Author: Lekan Molu
+        Date: October 19, 2022
+    """
+
+    # assert method is not None, "method must be 'slycot' or 'scipy'"
+
+
+    # Reshape input arrays
+    A = np.array(A, ndmin=2)
+    B1 = np.array(B1, ndmin=2)
+    B2 = np.array(B2, ndmin=2)
+    Q = np.array(Q, ndmin=2)
+    R = np.eye(B1.shape[1]) if R is None else np.array(R, ndmin=2)
+    if S is not None:
+        S = np.array(S, ndmin=2)
+    if E is not None:
+        E = np.array(E, ndmin=2)
+
+    # Determine main dimensions
+    n = A.shape[0]
+    m = B1.shape[1]
+
+    Rinv = la.inv(R)
+
+    P = np.zeros((n, n))
+    # initialization for stopping condition
+    P0 = np.ones((n, n))
+    step = 0
+
+    while la.norm(P0-P, ord=2)>1e-8 and step < 1e7:
+         step += 1
+         P0 = copy.copy(P)
+
+         P += (A.T@P0 + P0@A + Q - P0@(B1@Rinv@B1.T - 1/(γ**2)*B2@B2.T)@P0)*dt
+
+    K = Rinv@B1.T@P
+    L = 1/(γ**2)*B2.T@P
+
+    return P, K, L    
+
+def iterative_robust(A, B1, B2, C, K1, gamma, Phi1, Phi2, Psi, PIter=40, QIter=80):
+    """Solve the gains in an iDG robust control framework.
+    
+    """
+
+    n = A.shape[0]
+    K = np.zeros((PIter,)+(K1.shape))
+    K[0,:] = K1
+    Rmat = np.eye(K1.T.shape[-1])
+    P = np.zeros((PIter, QIter, n,n))
+
+
+    for p in range(1, PIter):
+        L = np.zeros((QIter, B2.shape[0], A.shape[0]))
+        for q in range(QIter):
+            t1 = Phi1@Psi 
+            t2 = smat(kron(np.eye(n), K[p-1,:].T) + kron( K[p-1,:].T, np.eye(n)) )@Phi2@Psi 
+            t3 = smat(kron(np.eye(n), L[q-1, :].T@B2.T) + kron( L[q-1, :]@B2.T, np.eye(n)))
+
+            Upsilon = t1 - t2 + t3
+
+            Qp = C.T@C - K[p-1,:].T@Rmat@K[p-1,:]
+
+            P[p,q] = la.pinv(Upsilon)@svec(Qp - (1/(gamma**2))*L[q-1,:].T@L[q-1,:])
+            L[q-1,:] = gamma**(-2)*B2.T@P[p,q]
+        K[p, :] = la.pinv(Rmat)*B1.T@P[p, q]
+
+    return K, L, P    

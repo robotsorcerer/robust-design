@@ -1,4 +1,4 @@
-__all__ = ["vec", "vecv", "svec", "svec2", "mat",  "mdot", "specrad", "vec2vecT",
+__all__ = ["vec", "vecv", "svec", "Tvec", "svec2", "mat",  "mdot", "specrad", "vec2vecT", 
            "smat", "smat2", "acker", "sympart", "is_pos_def", "succ", "precc", "psdpart", 
            "kron", "ctrb", "obsv", "is_symmetric", "place", "check_shape", "is_controllable", 
            "is_observable", "place_varga", "sys_integrator"]
@@ -79,6 +79,16 @@ def svec(P):
 
     return P[np.triu_indices(P.shape[0])]
 
+def Tvec(A, shape=None):
+    """Returns the vecotization of A.T"""
+
+    assert shape is not None, "shape cannot be None"
+
+    m, n = shape
+    res = vec(mat(vec(A), shape=(m, n)).T)
+    
+    return res
+
 def svec2(P):
     """Return the half-vectorization of matrix P such that its off diagonal entries are doubled.
 
@@ -111,16 +121,29 @@ def svec2(P):
 
 #     return B[np.triu_indices(A.shape[0])]
 
-def mat(v, shape=()):
-    """
-        Return matricization of vector v i.e. the
-        inverse operation of vec of vector v.
-    """
-    assert isinstance(shape, (tuple, list)), "shape must be an instance of list or tuple"
-    m,n = shape
-    matrix = kron(vec(np.eye(n)).T, np.eye(m))@kron(np.eye(n), v)
 
-    return matrix
+def mat(v, shape=None):
+    """Return matricization i.e. the inverse operation of vec of vector v."""
+    if shape is None:
+        dim = int(np.sqrt(v.size))
+        shape = dim, dim
+    matrix = v.reshape(shape[1], shape[0]).T
+    return matrix    
+
+
+# def old_mat(v, shape=(m,n)):
+#     """
+#         Return matricization of vector v i.e. the
+#         inverse operation of vec of vector v.
+
+#         This function is deprecated.
+#     """
+#     assert isinstance(shape, (tuple, list)), "shape must be an instance of list or tuple"
+#     m,n = shape
+#     matrix = kron(vec(np.eye(n)).T, np.eye(m))@kron(np.eye(n), v)
+
+#     return matrix
+
 
 def smat(v):
     """
@@ -135,7 +158,7 @@ def smat(v):
     A[idx_upper] = v
     A[idx_lower] = A.T[idx_lower]
 
-    return A
+    return A    
 
 def smat2(v):
     """
@@ -617,12 +640,12 @@ def sys_integrator(sys, X0, K_init, T):
     uout = np.zeros((n_steps, n_inputs))
 
     xout = np.zeros((n_steps, n_states))
-    xout[:, 0] = X0
+    xout[0,:] = X0
 
     zout = np.zeros((n_steps, n_outputs))
 
     for i in range(1, n_steps):
-        xi[i,:] -= xi[i-1,:]*dt + np.random.normal(0, 1, (2))*np.sqrt(dt) # encourage exploration noise.
+        xi[i,:] -= xi[i-1,:]*dt + np.random.normal(0, 1, (1))*np.sqrt(dt) # encourage exploration noise.
         uout[i-1,:] = -K_init@xout[i-1,:] + 10*xi[i,:]
         xout[i,:] = xout[i-1,:] + (A @ xout[i-1,:] + B1 @ uout[i-1,:])*dt + B2 @ xi[i,:]*np.sqrt(dt)
         zout[i,:] = C @ xout[i,:] + D @ uout[i,:]
