@@ -1,4 +1,5 @@
-__all__ = ["gamma_lowerbound", "hamiltonian", "get_hinf_norm", "solve_care"]
+__all__ = ["gamma_lowerbound", "hamiltonian", "get_hinf_norm", "solve_gare", 
+            "iterative_robust"]
 
 __date__        = "November 02, 2022"
 __comment__     = "H-Infinity Norm Utilities for Robust control."
@@ -145,7 +146,7 @@ def get_hinf_norm(A, B1, B2, C, D, K, step_size=0.1):
 
     return 0.5*(gamma_lb + gamma_ub)
 
-def solve_care(A, B1, B2, Q, R, γ, S=None, E=None, stabilizing=True, method=None, dt=0.0001):
+def solve_gare(A, B1, B2, Q, R, γ, S=None, E=None, stabilizing=True, method=None, dt=0.0001):
     """
         A Continuous-time (closed-loop) Riccati equation solver for two players 
         in a zero-sum linear quadratic differential game setting.
@@ -236,14 +237,15 @@ def iterative_robust(A, B1, B2, C, K1, gamma, Phi1, Phi2, Psi, PIter=40, QIter=8
 
     n = A.shape[0]
     K = np.zeros((PIter,)+(K1.shape))
+    L = np.random.normal(size=(QIter, B2.shape[0], A.shape[0]))
     K[0,:] = K1
     Rmat = np.eye(K1.T.shape[-1])
-    P = np.zeros((PIter, QIter, n,n))
+    P = np.random.normal(size=(PIter, QIter, n,n))
 
 
     for p in range(1, PIter):
-        L = np.zeros((QIter, B2.shape[0], A.shape[0]))
-        for q in range(QIter):
+        L[0,:] = np.random.normal(size=L[0].shape)
+        for q in range(1, QIter):
             t1 = Phi1@Psi 
             t2 = smat(kron(np.eye(n), K[p-1,:].T) + kron( K[p-1,:].T, np.eye(n)) )@Phi2@Psi 
             t3 = smat(kron(np.eye(n), L[q-1, :].T@B2.T) + kron( L[q-1, :]@B2.T, np.eye(n)))
@@ -252,8 +254,8 @@ def iterative_robust(A, B1, B2, C, K1, gamma, Phi1, Phi2, Psi, PIter=40, QIter=8
 
             Qp = C.T@C - K[p-1,:].T@Rmat@K[p-1,:]
 
-            P[p,q] = la.pinv(Upsilon)@svec(Qp - (1/(gamma**2))*L[q-1,:].T@L[q-1,:])
-            L[q-1,:] = gamma**(-2)*B2.T@P[p,q]
+            P[p,q] = la.pinv(Upsilon)@svec(Qp - (gamma**(-2))*L[q-1,:].T@L[q-1,:])
+            L[q,:] = gamma**(-2)*B2.T@P[p,q]
         K[p, :] = la.pinv(Rmat)*B1.T@P[p, q]
 
     return K, L, P    

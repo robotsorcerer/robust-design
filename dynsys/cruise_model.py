@@ -113,7 +113,7 @@ class CruiseControlModel():
 
         return np.clip(Tm * (1 - beta * (omega/omega_m - 1)**2), 0, None)
 
-    def dynamics(self, v, u, params={}):
+    def dynamics(self, t, v, u, params={}):
         """Vehicle dynamics for cruise control system.
 
         Parameters
@@ -131,7 +131,7 @@ class CruiseControlModel():
             Vehicle acceleration
 
         """
-        assert isinstance(u, list), "u must be a list of respective input arrays."
+        # assert isinstance(u, list), "u must be a list of respective input arrays."
         
         from math import copysign, sin
         sign = lambda x: copysign(1, x)         # define the sign() function
@@ -228,7 +228,7 @@ class CruiseControlModel():
         # torques (states) for different gears, as a function of velocity 
         v = np.linspace(1, ndata, ndata)
 
-        ode_rhs = self.dynamics(v=v, u=u)
+        ode_rhs = self.dynamics(0, v=v, u=u)
 
         # use this for NARMAX identification
         return np.asarray(u), ode_rhs

@@ -79,7 +79,7 @@ for i = 1:I
         Lambda = Phi_inv(1:n_vecv,:)*Xi - KI*Phi_inv(n_vecv+1:n_vecv+xn*un,:)*Xi + LD;
          
         [ZZ,RankFlag] = chol(Lambda'*Lambda);
-        RankFlag
+        RankFlag;
         
         P_vecs = -pinv(Lambda)*vecs(Q_KL);   
 
