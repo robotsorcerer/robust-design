@@ -128,22 +128,8 @@ def mat(v, shape=None):
         dim = int(np.sqrt(v.size))
         shape = dim, dim
     matrix = v.reshape(shape[1], shape[0]).T
+
     return matrix    
-
-
-# def old_mat(v, shape=(m,n)):
-#     """
-#         Return matricization of vector v i.e. the
-#         inverse operation of vec of vector v.
-
-#         This function is deprecated.
-#     """
-#     assert isinstance(shape, (tuple, list)), "shape must be an instance of list or tuple"
-#     m,n = shape
-#     matrix = kron(vec(np.eye(n)).T, np.eye(m))@kron(np.eye(n), v)
-
-#     return matrix
-
 
 def smat(v):
     """
